@@ -1,6 +1,8 @@
 # windows CET
-windows CET is a protect mechanism to avoid ROP exploit skill.
-For example:
+windows CET is a protect mechanism to avoid ROP exploit skill.<br/>
+**CET is supported starting from Intel 11th CPU(Tiger lake), It's a hardware feature!**<br/>
+
+For example:<br/>
 test.asm
 ```asm
 .code
@@ -48,24 +50,64 @@ $ test.exe
 hello1
 hello2
 ```
-> CET is supported starting from Intel 11th CPU.
+
 
 We can enable it in VS2019 by:
 `Configuration Properties` > `Linker` > `Additional Options`, select `CET shadow stack compatible`
 
-# Check if enabled CET
+# Check CETCOMPAT
 We can use `C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.28.29333\bin\Hostx64\x64\dumpbin.exe` to check if a program enabled CET:
-```bash
+```
 $ .\dumpbin.exe  /headers "C:\Windows\System32\conhost.exe"|findstr CET
                    CET compatible
 $
 ```
+<br/>
+<br/>
+We can check CET for a running process in `Task Manager`, by select `Hardware-enforced Stack Protection` in `Details` list.
+<br/>
+![select-column](https://user-images.githubusercontent.com/13879204/169243559-1dac2ce2-cbd8-4331-b688-1b26ca9a9d8a.png)
+<br/>
+<br/>
+In following picture, I test it in VMware Workstation, so no process enabled CET.
+![cet](https://user-images.githubusercontent.com/13879204/169243595-a4bbca5e-84cb-4eac-bd99-f5b25c457e06.png)
+<br/>
+<br/>
+You can also try to use [process hacker](https://github.com/processhacker/processhacker) and active `CET` column in `process list`.
+![image](https://user-images.githubusercontent.com/13879204/169244951-dd907417-782f-47eb-826c-fb1d8199b902.png)
 
 
 # Weakness
 1. it doesn't check if we return from `test` to `main` at position after called `test3`. This means CET won't check return stack out-of-order.
 2. if exe doesn't enable CETCOMPAT, though it loads dll enabled CET, running process don't have CET whether `ret` in program or dll. This is different from ASLR or DEP.
-3. For VMware Workstation, it doesn't support CET in VM.
+3. For VMware Workstation, it doesn't support CET in VM even CPU supports.
+
+# Other Info
+Chrome.exe enabled CETCOMPAT, however, not all chrome process enabled CET.<br/>
+We can force CET for a range virtual address of target process by [SetProcessDynamicEnforcedCetCompatibleRanges](https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessdynamicenforcedcetcompatibleranges). <br/>
+<br/>
+we can force a program enabling CET in Windows Defender:
+<br/>
+![image](https://user-images.githubusercontent.com/13879204/169259851-1a8c9c5d-6504-4b06-b34a-d5a2c426877d.png)
+<br/>
+![image](https://user-images.githubusercontent.com/13879204/169260024-53b4302e-138b-4622-89ba-67cdf6771e14.png)
+<br/>
+after choose a file. Enable CET:<br/>
+![image](https://user-images.githubusercontent.com/13879204/169261032-d20f1d45-1d03-41a5-b7ac-c3d0573fd7f7.png)
+<br/>
+![image](https://user-images.githubusercontent.com/13879204/169261121-12c3fa98-a1f5-43d6-bdd0-4bb116c8b692.png)
+<br/>
+It acctually set `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`:
+<br/>
+![image](https://user-images.githubusercontent.com/13879204/169256984-9506c685-a4dc-4e55-b930-9b96dce7cb24.png)
+
+# Extra Reading
+[Enabling Hardware-enforced Stack Protection (cetcompat) in Chrome](https://security.googleblog.com/2021/05/enabling-hardware-enforced-stack.html)<br/>
+[CET Updates – Dynamic Address Ranges](https://windows-internals.com/cet-updates-dynamic-address-ranges/)<br/>
+[Windows 21H1 CET Improvements](https://windows-internals.com/cet-updates-cet-on-xanax/)<br/>
+[Intel ISA](https://techcommunity.microsoft.com/t5/windows-kernel-internals-blog/developer-guidance-for-hardware-enforced-stack-protection/ba-p/2163340) (Chapter 18)<br/>
+[R.I.P ROP: CET Internals in Windows 20H1](https://windows-internals.com/cet-on-windows/)<br/>
+[Developer Guidance for Hardware-enforced Stack Protection](https://techcommunity.microsoft.com/t5/windows-kernel-internals-blog/developer-guidance-for-hardware-enforced-stack-protection/ba-p/2163340)<br/>
 
 # Enabled CET list in windows:
 Windows 21H2
