@@ -64,16 +64,22 @@ $
 ```
 <br/>
 <br/>
+
 We can check CET for a running process in `Task Manager`, by select `Hardware-enforced Stack Protection` in `Details` list.
 <br/>
+
 ![select-column](https://user-images.githubusercontent.com/13879204/169243559-1dac2ce2-cbd8-4331-b688-1b26ca9a9d8a.png)
 <br/>
 <br/>
+
 In following picture, I test it in VMware Workstation, so no process enabled CET.
-![cet](https://user-images.githubusercontent.com/13879204/169243595-a4bbca5e-84cb-4eac-bd99-f5b25c457e06.png)
+
+![image](https://user-images.githubusercontent.com/13879204/169243595-a4bbca5e-84cb-4eac-bd99-f5b25c457e06.png)
 <br/>
 <br/>
+
 You can also try to use [process hacker](https://github.com/processhacker/processhacker) and active `CET` column in `process list`.
+
 ![image](https://user-images.githubusercontent.com/13879204/169244951-dd907417-782f-47eb-826c-fb1d8199b902.png)
 
 
@@ -259,3 +265,7 @@ C:\Program Files (x86)\Microsoft\EdgeUpdate\Download\{F3C4FE00-EFD5-403B-9569-39
 C:\Program Files (x86)\Microsoft Office\root\VFS\ProgramFilesCommonX64\Microsoft Shared\OFFICE16\ai.exe
 C:\Program Files (x86)\Microsoft Office\root\VFS\ProgramFilesCommonX86\Microsoft Shared\OFFICE16\ai.exe
 ```
+
+Processes in windows 21H2:
+
+![image](https://user-images.githubusercontent.com/13879204/169432139-af9f44fb-f58f-4f2b-8b9d-b0d3c17ff460.png)
