@@ -55,6 +55,8 @@ hello2
 We can enable it in VS2019 by:
 `Configuration Properties` > `Linker` > `Additional Options`, select `CET shadow stack compatible`
 
+CETCOMPAT is a compatible mode, it enabled CET only for module compiled with CETCOMPAT. If we want a process enable CET for all modules, we need to create it with strict mode(check **Enforce CET for a process in C**).
+
 # Check CETCOMPAT
 We can use `C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.28.29333\bin\Hostx64\x64\dumpbin.exe` to check if a program enabled CET:
 ```
@@ -73,12 +75,13 @@ We can check CET for a running process in `Task Manager`, by select `Hardware-en
 <br/>
 
 In following picture, I test it in VMware Workstation, so no process enabled CET.
-
+> VMware Workstation don't support CET emulation
 ![image](https://user-images.githubusercontent.com/13879204/169243595-a4bbca5e-84cb-4eac-bd99-f5b25c457e06.png)
 <br/>
 <br/>
 
 You can also try to use [process hacker](https://github.com/processhacker/processhacker) and active `CET` column in `process list`.
+> `process hacker` now changes name to [System Informer](https://github.com/winsiderss/systeminformer/)
 
 ![image](https://user-images.githubusercontent.com/13879204/169244951-dd907417-782f-47eb-826c-fb1d8199b902.png)
 
@@ -87,6 +90,115 @@ You can also try to use [process hacker](https://github.com/processhacker/proces
 1. it doesn't check if we return from `test` to `main` at position after called `test3`. This means CET won't check return stack out-of-order.
 2. if exe doesn't enable CETCOMPAT, though it loads dll enabled CET, running process don't have CET whether `ret` in program or dll. This is different from ASLR or DEP.
 3. For VMware Workstation, it doesn't support CET in VM even CPU supports.
+
+# Enforce CET for a process in C
+Based on UpdateProcThreadAttribute(https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) <br/>
+
+The following mitigation options are available for user-mode Hardware-enforced Stack Protection and related features:
+
+```
+#define PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_ON (0x00000001ui64 << 28)
+#define PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_OFF (0x00000002ui64 << 28)
+#define PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_STRICT_MODE (0x00000003ui64 << 28)
+```
+
+Instruction Pointer validation:
+```
+#define PROCESS_CREATION_MITIGATION_POLICY2_USER_CET_SET_CONTEXT_IP_VALIDATION_ALWAYS_ON (0x00000001ui64 << 32)
+#define PROCESS_CREATION_MITIGATION_POLICY2_USER_CET_SET_CONTEXT_IP_VALIDATION_ALWAYS_OFF (0x00000002ui64 << 32)
+#define PROCESS_CREATION_MITIGATION_POLICY2_USER_CET_SET_CONTEXT_IP_VALIDATION_RELAXED_MODE (0x00000003ui64 << 32)
+```
+
+Blocking the load of non-CETCOMPAT/non-EHCONT binaries:
+```
+#define PROCESS_CREATION_MITIGATION_POLICY2_BLOCK_NON_CET_BINARIES_ALWAYS_ON (0x00000001ui64 << 36)
+#define PROCESS_CREATION_MITIGATION_POLICY2_BLOCK_NON_CET_BINARIES_ALWAYS_OFF (0x00000002ui64 << 36)
+#define PROCESS_CREATION_MITIGATION_POLICY2_BLOCK_NON_CET_BINARIES_NON_EHCONT (0x00000003ui64 << 36)
+```
+
+Example, here I create a child process with CET enabled:
+```c
+#include <windows.h>
+#include <stdio.h>
+
+int main(void) {
+    DWORD64 ProtectionLevel[2] = { 0 };
+    DWORD64* flag2 = &ProtectionLevel[1];
+    *flag2 = PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_ON;
+    SIZE_T AttributeListSize;
+    DWORD Result;
+
+    STARTUPINFOEXW StartupInfoEx = { 0 };
+    StartupInfoEx.StartupInfo.cb = sizeof(StartupInfoEx);
+    DWORD64 mask[2] = { 0 };
+    Result = GetProcessMitigationPolicy(GetCurrentProcess(), ProcessMitigationOptionsMask, mask, sizeof(mask));
+    if (!Result) {
+        Result = GetLastError();
+        goto exitFunc;
+    }
+    ProtectionLevel[0] &= mask[0];
+    ProtectionLevel[1] &= mask[1];
+    printf("ProtectionLevel: %llx %llx\n", ProtectionLevel[0], ProtectionLevel[1]);
+    InitializeProcThreadAttributeList(NULL, 1, 0, &AttributeListSize);
+
+    StartupInfoEx.lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(
+            GetProcessHeap(),
+            0,
+            AttributeListSize
+        );
+
+    if (InitializeProcThreadAttributeList(StartupInfoEx.lpAttributeList,
+        1,
+        0,
+        &AttributeListSize) == FALSE)
+    {
+        Result = GetLastError();
+        goto exitFunc;
+    }
+
+    if (UpdateProcThreadAttribute(StartupInfoEx.lpAttributeList,
+        0,
+        PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+        &ProtectionLevel,
+        sizeof(ProtectionLevel),
+        NULL,
+        NULL) == FALSE)
+    {
+        Result = GetLastError();
+        goto exitFunc;
+    }
+
+    PROCESS_INFORMATION ProcessInformation = { 0 };
+
+    if (CreateProcessW(L"C:\\Windows\\System32\\cmd.exe",
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        EXTENDED_STARTUPINFO_PRESENT,
+        NULL,
+        NULL,
+        (LPSTARTUPINFOW)&StartupInfoEx,
+        &ProcessInformation) == FALSE)
+    {
+        Result = GetLastError();
+        goto exitFunc;
+    }
+exitFunc:
+    printf("Error is:%d", Result);
+    getch();
+	return 0;
+}
+```
+
+![image](https://user-images.githubusercontent.com/13879204/169436918-f961f3aa-d26f-45b6-8eff-3018d63fcaa1.png)
+
+
+> if you want to create a child process without CET even it compiled with CETCOMPAT, set `PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_OFF` flag.
+
+
+Reference: <br/>
+[chromium sandbox process_mitigations.cc](https://chromium.googlesource.com/chromium/src/sandbox/+/refs/heads/main/win/src/process_mitigations.cc)
 
 # Other Info
 Chrome.exe enabled CETCOMPAT, however, not all chrome process enabled CET.<br/>
@@ -98,14 +210,16 @@ we can force a program enabling CET in Windows Defender:
 <br/>
 ![image](https://user-images.githubusercontent.com/13879204/169260024-53b4302e-138b-4622-89ba-67cdf6771e14.png)
 <br/>
-after choose a file. Enable CET:<br/>
+after choose a file, here I select `cmd.exe` to enable CET:<br/>
 ![image](https://user-images.githubusercontent.com/13879204/169261032-d20f1d45-1d03-41a5-b7ac-c3d0573fd7f7.png)
 <br/>
+And here `cmd` process is enabling CET:<br/>
 ![image](https://user-images.githubusercontent.com/13879204/169261121-12c3fa98-a1f5-43d6-bdd0-4bb116c8b692.png)
 <br/>
-It acctually set `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`:
 <br/>
-![image](https://user-images.githubusercontent.com/13879204/169256984-9506c685-a4dc-4e55-b930-9b96dce7cb24.png)
+Windows Defender acctually sets `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options` for that program:
+<br/>
+![image](https://user-images.githubusercontent.com/13879204/169438321-0ff14cea-d8b9-4d2e-924d-e3ac9d5b2119.png)
 
 # Extra Reading
 [Enabling Hardware-enforced Stack Protection (cetcompat) in Chrome](https://security.googleblog.com/2021/05/enabling-hardware-enforced-stack.html)<br/>
